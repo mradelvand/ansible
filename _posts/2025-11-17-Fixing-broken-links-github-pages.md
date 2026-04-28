@@ -1,118 +1,1543 @@
 ---
-title: "Fixing Broken Links in GitHub Pages — Beginner’s Guide to baseurl, relative_url, and Slugify"
-date: 2025-11-17
-categories: [GitHub Pages, DevOps & Automation]
-tags: [GitHub-Pages, Jekyll, baseurl, relative_url, slugify]
+title: "LAB01: From Zero to Production-Ready Automation with Vagrant"
+date: 2026-04-27
+categories: [ansible, DevOps & Automation, vagrant]
+tags: [ansible, vagrant, Handlers, Ansible Roles]
 ---
+# Complete Ansible Project: From Zero to Production-Ready Automation with Vagrant
 
-
-## Fixing Broken Links in GitHub Pages
-
-A guide to `baseurl`, `relative_url`, and `slugify` (with real examples).
-
-> Optional: If you want to learn more about GitHub Pages migrations, check out my previous post: [Migrate a GitHub Pages Site Between Accounts — Step-by-Step Guide](https://mradelvand.github.io/aws/github%20pages/devops%20&%20automation/2025/11/17/migrate-github-page-site-between-accounts.html)
-
-
-When creating two GitHub Pages project sites:
-```bash
-username.github.io/aws
-username.github.io/soccer
-```
-
-a common problem appears — all the blog posts inside the AWS site open incorrect URLs.
-
-Instead of:
-
-> https://username.github.io/aws/aws-architecture/2025/10/28/post1.html
-
-
-the URLs look like:
-
-> https://username.github.io/aws-architecture/2025/10/28/post1.html
-
-
-This means:
-
-- Pages were broken  
-- Categories were broken  
-- Latest posts links were broken  
-
-After investigating how Jekyll handles paths, here’s a simple explanation.
+> **A hands-on, step-by-step guide covering Files, Templates, Handlers, and Roles — with real Vagrant lab environments and verification at every step.**
 
 ---
 
-## Lesson 1 — A GitHub Pages Project Site Always Lives Inside a Folder
+## Table of Contents
 
-If your repository is named `aws`, the project site URL will always be:
-
-> https://username.github.io/aws/
-
-
-Every internal link must also start with `/aws/`, but Jekyll doesn’t automatically know this.  
-You have to tell it where your site lives.
+1. [What You Will Build](#what-you-will-build)
+2. [Prerequisites & Tool Installation](#prerequisites--tool-installation)
+3. [Lab Environment: Vagrant Setup](#lab-environment-vagrant-setup)
+4. [Project Structure Overview](#project-structure-overview)
+5. [Part 1 — Inventory & Basic Connectivity](#part-1--inventory--basic-connectivity)
+6. [Part 2 — File Operations & the Banner Task](#part-2--file-operations--the-banner-task)
+7. [Part 3 — Template Module & NTP Configuration](#part-3--template-module--ntp-configuration)
+8. [Part 4 — Handlers: Restart Only When Needed](#part-4--handlers-restart-only-when-needed)
+9. [Part 5 — Ansible Roles: Organising Everything](#part-5--ansible-roles-organising-everything)
+10. [Part 6 — Variable Overriding with Roles](#part-6--variable-overriding-with-roles)
+11. [Part 7 — Ansible Galaxy: Using Community Roles](#part-7--ansible-galaxy-using-community-roles)
+12. [Final Project Verification](#final-project-verification)
+13. [Real-World Use Cases](#real-world-use-cases)
+14. [Troubleshooting Reference](#troubleshooting-reference)
 
 ---
 
-## Lesson 2 — `baseurl` Tells Jekyll “My Site Starts Inside a Folder”
+## What You Will Build
 
-Inside your `_config.yml`, add:
+By the end of this guide you will have a **fully working multi-VM Ansible automation lab** that:
+
+- Provisions **two VMs** (one CentOS Stream 9, one Ubuntu 22.04) via Vagrant
+- Deploys a **login banner** to both servers using the `copy` module
+- Configures **NTP (chrony / ntpd)** on both servers using the **template** module with Jinja2 variables
+- Uses **handlers** so the NTP service restarts *only* when the configuration actually changes
+- Organises everything into a proper **Ansible Role** (`post-install`)
+- Demonstrates **variable overriding** so the same role can be reused across environments
+- Optionally installs a **community role from Ansible Galaxy**
+
+```
+ansible-lab/
+├── Vagrantfile
+├── ansible.cfg
+├── inventory/
+│   └── hosts.ini
+├── group_vars/
+│   └── all.yml
+├── host_vars/
+│   ├── db01.yml
+│   └── web03.yml
+├── templates/
+│   ├── ntpconf_centos.j2
+│   └── ntpconf_ubuntu.j2
+├── files/
+│   └── myfile.txt
+├── provisioning.yml
+└── roles/
+    └── post-install/
+        ├── defaults/main.yml
+        ├── vars/main.yml
+        ├── tasks/main.yml
+        ├── handlers/main.yml
+        ├── templates/
+        │   ├── ntpconf_centos.j2
+        │   └── ntpconf_ubuntu.j2
+        └── files/
+            └── myfile.txt
+```
+
+---
+
+## Prerequisites & Tool Installation
+
+### What You Need on Your Host Machine
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| VirtualBox | 7.x | Hypervisor for Vagrant VMs |
+| Vagrant | 2.3+ | VM lifecycle management |
+| Ansible | 2.14+ | Automation engine (installed on control VM) |
+| Git | Any | Clone/track your project |
+
+### Install on macOS
 
 ```bash
-baseurl: "/aws"
+# Install Homebrew if not present
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+brew install --cask virtualbox
+brew install --cask vagrant
+# Ansible will be installed inside the control VM (the CentOS box acts as control node)
 ```
-This setting tells Jekyll:
 
-Every URL should start with /aws
-
-This is required for any GitHub Pages project site and fixes many link issues.
-
-## Lesson 3 — relative_url Automatically Adds baseurl to Links
-
-Before the fix, your archive or index page might have links like:
-```bash
-<a href="{{ post.url }}">{{ post.title }}</a>
-```
-post.url contains only the post path, for example:
+### Install on Ubuntu/Debian Host
 
 ```bash
-/aws-architecture/2025/10/28/post1
+sudo apt update
+sudo apt install -y virtualbox vagrant
 ```
-But this creates a broken URL because the /aws/ prefix is missing.
+or try below for vagrant installation;
+add a GPG key and add a new repository
 
-By adding | relative_url:
 ```bash
-<a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
 ```
-
-Jekyll automatically inserts the *baseurl* prefix:
-
-This fixes all post links, archive links, and latest posts links.
-
-## Lesson 4 — What is “Slugify” and Why It Matters
-
-In your *archive.md* file, you might see:
 ```bash
-<h2 id="{{ category[0] | slugify }}">{{ category[0] }}</h2>
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list```
+
+sudo apt update && sudo apt install vagrant
 ```
-**Slugify** is a Jekyll function that turns messy text into a clean, URL-friendly format for HTML IDs.
 
-### Why this matters:
 
-HTML IDs cannot contain spaces, capital letters, or special characters
+### Install on Windows
 
-Slugify ensures the category heading ID is safe for the browser
+Download and install:
+- VirtualBox: https://www.virtualbox.org/wiki/Downloads
+- Vagrant: https://developer.hashicorp.com/vagrant/downloads
 
-> Important: Slugify is applied only to the HTML ID, not the folder name.
-> Folder names are still based on the category name you set in your post front matter.
+Use **Git Bash** or **WSL2** as your terminal throughout this guide.
 
-## Lesson 6 — Summary
+### ✅ Verification — Prerequisites
 
-- baseurl tells Jekyll where your site lives
+```bash
+vagrant --version    # Should print: Vagrant 2.x.x
+vboxmanage --version # Should print a version number
+```
 
-- relative_url automatically adds the baseurl to all links
+---
 
-- slugify cleans category names for safe HTML IDs
+## Lab Environment: Vagrant Setup
 
-- Old posts can still work after adding baseurl + relative_url even if category names have spaces
+We will spin up **three VMs**:
 
-These three concepts prevent broken links on GitHub Pages and make your site more consistent and beginner-friendly.
+| VM Name | Role | OS | Private IP | Hostname |
+|---------|------|----|------------|----------|
+| `control` | Ansible Control Node | CentOS Stream 9 | 192.168.56.10 | control |
+| `db01` | Managed Node (CentOS) | CentOS Stream 9 | 192.168.56.11 | db01 |
+| `web03` | Managed Node (Ubuntu) | Ubuntu 22.04 | 192.168.56.12 | web01 |
+
+### Step 1: Create the Project Directory
+
+```bash
+mkdir ~/ansible-lab01
+cd ~/ansible-lab01
+```
+
+### Step 2: Create the Vagrantfile
+
+Create a file named `Vagrantfile` (no extension) in your project root:
+
+```ruby
+# Vagrantfile
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+
+  # ─── Control Node (CentOS Stream 9) ───────────────────────────────────────
+  config.vm.define "control" do |control|
+    control.vm.box = "eurolinux-vagrant/centos-stream-9"
+    control.vm.hostname = "control"
+    control.vm.network "private_network", ip: "192.168.56.10"
+
+    control.vm.provider "virtualbox" do |vb|
+      vb.name   = "ansible-control"
+      vb.memory = "1024"
+      vb.cpus   = 1
+    end
+
+    # Provision: install Ansible, copy SSH key, install tree
+    control.vm.provision "shell", inline: <<-SHELL
+      sudo dnf install -y epel-release
+      sudo dnf install -y ansible tree sshpass
+      echo "Control node ready. Ansible version: $(ansible --version | head -1)"
+    SHELL
+  end
+
+  # ─── Managed Node 1: db01 (CentOS Stream 9) ───────────────────────────────
+  config.vm.define "db01" do |db01|
+    db01.vm.box = "eurolinux-vagrant/centos-stream-9"
+    db01.vm.hostname = "db01"
+    db01.vm.network "private_network", ip: "192.168.56.11"
+
+    db01.vm.provider "virtualbox" do |vb|
+      vb.name   = "ansible-db01"
+      vb.memory = "512"
+      vb.cpus   = 1
+    end
+
+    db01.vm.provision "shell", inline: <<-SHELL
+      sudo dnf install -y chrony
+      sudo systemctl enable chronyd
+    SHELL
+  end
+
+  # ─── Managed Node 2: web03 (Ubuntu 22.04) ─────────────────────────────────
+  config.vm.define "web03" do |web03|
+    web03.vm.box = "ubuntu/jammy64"
+    web03.vm.hostname = "web03"
+    web03.vm.network "private_network", ip: "192.168.56.12"
+
+    web03.vm.provider "virtualbox" do |vb|
+      vb.name   = "ansible-web01"
+      vb.memory = "512"
+      vb.cpus   = 1
+    end
+
+    web03.vm.provision "shell", inline: <<-SHELL
+      sudo apt-get update -y
+      sudo apt-get install -y ntp python3
+    SHELL
+  end
+
+end
+```
+
+### Step 3: Start the VMs
+
+```bash
+vagrant up
+```
+
+> This will download the boxes on first run (~500 MB each) and may take 5–15 minutes.
+
+### Step 4: Generate and Distribute SSH Keys
+
+We need the control node to SSH into the managed nodes without a password.
+
+```bash
+# SSH into the control node
+vagrant ssh control
+
+# Generate an SSH key pair (press Enter for all prompts — no passphrase)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/ansible_key -N ""
+
+# Copy the public key to each managed node
+# Default Vagrant password is "vagrant"
+ssh-copy-id -i ~/.ssh/ansible_key.pub -o StrictHostKeyChecking=no vagrant@192.168.56.11
+ssh-copy-id -i ~/.ssh/ansible_key.pub -o StrictHostKeyChecking=no vagrant@192.168.56.12
+
+# Test passwordless SSH
+ssh -i ~/.ssh/ansible_key vagrant@192.168.56.11 "hostname"
+ssh -i ~/.ssh/ansible_key vagrant@192.168.56.12 "hostname"
+```
+
+Expected output:
+```
+db01
+web03
+```
+
+### ✅ Verification — VM Environment
+
+From inside the control node:
+
+```bash
+# Check all VMs are accessible
+ping -c 1 192.168.56.11 && echo "db01 reachable"
+ping -c 1 192.168.56.12 && echo "web03 reachable"
+
+# Check Ansible is installed
+ansible --version
+```
+
+Expected Ansible output:
+```
+ansible [core 2.14.x]
+  config file = None
+  ...
+```
+
+---
+
+## Project Structure Overview
+
+From inside the control node, set up the project directory:
+
+```bash
+mkdir -p ~/ansible-lab
+cd ~/ansible-lab
+```
+
+All subsequent steps assume you are working inside `~/ansible-lab` on the **control node**.
+
+---
+
+## Part 1 — Inventory & Basic Connectivity
+
+### Step 1: Create the Inventory File
+
+```bash
+mkdir -p inventory
+```
+
+Create `inventory/hosts.ini`:
+
+```ini
+# inventory/hosts.ini
+# This file tells Ansible which servers to manage and how to connect.
+
+[centos]
+db01 ansible_host=192.168.56.11 ansible_user=vagrant ansible_ssh_private_key_file=~/.ssh/ansible_key
+
+[ubuntu]
+web03 ansible_host=192.168.56.12 ansible_user=vagrant ansible_ssh_private_key_file=~/.ssh/ansible_key
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+```
+
+**Why separate groups?** CentOS and Ubuntu use different package managers (`dnf` vs `apt`), different service names (`chronyd` vs `ntp`), and different config file paths. Grouping them allows us to write conditional tasks using `ansible_distribution`.
+
+### Step 2: Create ansible.cfg
+
+```bash
+cat > ansible.cfg << 'EOF'
+[defaults]
+inventory          = inventory/hosts.ini
+remote_user        = vagrant
+private_key_file   = ~/.ssh/ansible_key
+host_key_checking  = False
+retry_files_enabled = False
+
+[privilege_escalation]
+become      = True
+become_method = sudo
+become_user = root
+EOF
+```
+
+**Key settings explained:**
+
+- `host_key_checking = False` — Skips the "Are you sure you want to connect?" prompt. Fine for labs, but enable in production.
+- `become = True` — All tasks run as root via sudo by default.
+- `retry_files_enabled = False` — Prevents `.retry` files cluttering your directory.
+
+### ✅ Verification — Inventory & Ping
+
+```bash
+# List all hosts Ansible knows about
+ansible all --list-hosts
+
+# Test SSH connectivity to all hosts
+ansible all -m ping
+```
+
+Expected output:
+```
+db01 | SUCCESS => {
+    "changed": false,
+    "ping": "pong"
+}
+web03 | SUCCESS => {
+    "changed": false,
+    "ping": "pong"
+}
+```
+
+If you see `UNREACHABLE`, double-check your SSH key was copied correctly and the IP addresses match.
+
+---
+
+## Part 2 — File Operations & the Banner Task
+
+### The Goal
+
+We want every server to show a message when someone logs in:
+
+```
+This server is managed by Ansible.
+No manual changes please.
+```
+
+This is stored in `/etc/motd` — the "Message of the Day" file.
+
+### Step 1: Create group_vars
+
+```bash
+mkdir -p group_vars
+```
+
+Create `group_vars/all.yml`:
+
+```yaml
+# group_vars/all.yml
+# Variables here apply to ALL hosts in the inventory.
+# We will add NTP variables later.
+banner_message: |
+  ############################################
+  #   This server is managed by Ansible.     #
+  #   No manual changes please.              #
+  ############################################
+```
+
+### Step 2: Create the Playbook
+
+Create `provisioning.yml`:
+
+```yaml
+---
+# provisioning.yml
+# Main playbook for the post-install configuration of all servers.
+
+- name: Post-Install Configuration
+  hosts: all
+  become: true
+
+  tasks:
+
+    # ─── Task 1: Deploy Login Banner ──────────────────────────────────────────
+    - name: Banner file
+      ansible.builtin.copy:
+        content: "{{ banner_message }}"
+        dest: /etc/motd
+        owner: root
+        group: root
+        mode: '0644'
+```
+
+**Why `copy` with `content:` instead of `src:`?**
+
+When your content is short and well-known (a one-liner or a few lines), using `content:` is cleaner — there is no separate file to manage. When content is complex or binary, use `src:` pointing to a file in your `files/` directory.
+
+### Step 3: Run the Playbook
+
+```bash
+ansible-playbook provisioning.yml
+```
+
+### ✅ Verification — Banner
+
+```bash
+# Check the file was created on db01
+ansible db01 -m shell -a "cat /etc/motd"
+
+# Check the file was created on web03
+ansible web03 -m shell -a "cat /etc/motd"
+
+# Actually log in and see it appear at login
+ssh -i ~/.ssh/ansible_key vagrant@192.168.56.11
+# You should see the banner immediately after logging in
+exit
+```
+
+Expected output of `cat /etc/motd`:
+```
+############################################
+#   This server is managed by Ansible.     #
+#   No manual changes please.              #
+############################################
+```
+
+---
+
+## Part 3 — Template Module & NTP Configuration
+
+### Why Templates Instead of Copy?
+
+The `copy` module pushes a static file — every server gets the exact same content. The `template` module is smarter: it reads your file, finds **Jinja2 placeholders** like `{{ variable_name }}`, substitutes the actual values, and *then* pushes the result. This means one template can produce different output for different servers or environments — just by changing variables.
+
+**Real-world use case:** You have 50 servers across 3 data centres. Each data centre should use the NTP servers closest to it. Instead of maintaining 3 separate config files, you maintain 1 template and 3 variable files.
+
+### Step 1: Get the NTP Config Files from the Servers
+
+Log into each server and grab the existing NTP config:
+
+```bash
+# From control node
+ssh -i ~/.ssh/ansible_key vagrant@192.168.56.11 "cat /etc/chrony.conf"
+```
+
+You will see something like:
+```
+# Use public servers from the pool.ntp.org project.
+pool 2.centos.pool.ntp.org iburst
+
+# Record the rate at which the system clock gains/loses time.
+driftfile /var/lib/chrony/drift
+...
+```
+
+```bash
+ssh -i ~/.ssh/ansible_key vagrant@192.168.56.12 "cat /etc/ntp.conf"
+```
+
+Ubuntu output:
+```
+# /etc/ntp.conf
+server 0.ubuntu.pool.ntp.org
+server 1.ubuntu.pool.ntp.org
+...
+```
+
+### Step 2: Create the Templates Directory & Files
+
+```bash
+mkdir -p templates
+```
+
+Create `templates/ntpconf_centos.j2`:
+
+```jinja2
+# /etc/chrony.conf — Managed by Ansible. Do not edit manually.
+# Template: ntpconf_centos.j2
+
+# NTP servers — values injected by Ansible from group_vars
+pool {{ ntp0 }} iburst
+pool {{ ntp1 }} iburst
+pool {{ ntp2 }} iburst
+pool {{ ntp3 }} iburst
+
+# Record the rate at which the system clock gains/loses time.
+driftfile /var/lib/chrony/drift
+
+# Allow the system clock to be stepped in the first three updates
+# if its offset is larger than 1 second.
+makestep 1.0 3
+
+# Enable kernel synchronisation of the real-time clock (RTC).
+rtcsync
+
+# Specify directory for log files.
+logdir /var/log/chrony
+```
+
+Create `templates/ntpconf_ubuntu.j2`:
+
+```jinja2
+# /etc/ntp.conf — Managed by Ansible. Do not edit manually.
+# Template: ntpconf_ubuntu.j2
+
+# NTP servers — values injected by Ansible from group_vars
+server {{ ntp0 }} iburst
+server {{ ntp1 }} iburst
+server {{ ntp2 }} iburst
+server {{ ntp3 }} iburst
+
+# By default, exchange time with everybody, but don't allow configuration.
+restrict -4 default kod notrap nomodify nopeer noquery limited
+restrict -6 default kod notrap nomodify nopeer noquery limited
+
+# Local users may query the ntp server more permissively.
+restrict 127.0.0.1
+restrict ::1
+
+driftfile /var/lib/ntp/ntp.drift
+```
+
+### Step 3: Add NTP Server Variables to group_vars
+
+Edit `group_vars/all.yml` and add the NTP server variables below the banner:
+
+```yaml
+# group_vars/all.yml
+banner_message: |
+  ############################################
+  #   This server is managed by Ansible.     #
+  #   No manual changes please.              #
+  ############################################
+
+# NTP Servers (North America pool — change for your region)
+# Find servers for your region at: https://www.ntppool.org/
+ntp0: "0.north-america.pool.ntp.org"
+ntp1: "1.north-america.pool.ntp.org"
+ntp2: "2.north-america.pool.ntp.org"
+ntp3: "3.north-america.pool.ntp.org"
+```
+
+### Step 4: Update the Playbook with Template & Service Tasks
+
+Update `provisioning.yml`:
+
+```yaml
+---
+# provisioning.yml
+
+- name: Post-Install Configuration
+  hosts: all
+  become: true
+
+  tasks:
+
+    # ─── Task 1: Deploy Login Banner ──────────────────────────────────────────
+    - name: Banner file
+      ansible.builtin.copy:
+        content: "{{ banner_message }}"
+        dest: /etc/motd
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ─── Task 2: Create a managed directory ───────────────────────────────────
+    - name: Create managed directory
+      ansible.builtin.file:
+        path: /opt/ansible-managed
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # ─── Task 3: Deploy NTP config on CentOS ──────────────────────────────────
+    - name: Deploy ntp agent conf on centos
+      ansible.builtin.template:
+        src: ntpconf_centos.j2
+        dest: /etc/chrony.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      when: ansible_distribution == "CentOS"
+
+    # ─── Task 4: Deploy NTP config on Ubuntu ──────────────────────────────────
+    - name: Deploy ntp agent conf on ubuntu
+      ansible.builtin.template:
+        src: ntpconf_ubuntu.j2
+        dest: /etc/ntp.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      when: ansible_distribution == "Ubuntu"
+
+    # ─── Task 5: Ensure NTP service started (CentOS) ──────────────────────────
+    - name: Start and enable chronyd on CentOS
+      ansible.builtin.service:
+        name: chronyd
+        state: started
+        enabled: yes
+      when: ansible_distribution == "CentOS"
+
+    # ─── Task 6: Ensure NTP service started (Ubuntu) ──────────────────────────
+    - name: Start and enable ntp on Ubuntu
+      ansible.builtin.service:
+        name: ntp
+        state: started
+        enabled: yes
+      when: ansible_distribution == "Ubuntu"
+
+    # ─── Task 7: Restart NTP on CentOS (PROBLEM: always restarts!) ────────────
+    - name: Restart chronyd on CentOS
+      ansible.builtin.service:
+        name: chronyd
+        state: restarted
+      when: ansible_distribution == "CentOS"
+
+    # ─── Task 8: Restart NTP on Ubuntu (PROBLEM: always restarts!) ────────────
+    - name: Restart ntp on Ubuntu
+      ansible.builtin.service:
+        name: ntp
+        state: restarted
+      when: ansible_distribution == "Ubuntu"
+```
+
+### Step 5: Run and Observe the Problem
+
+```bash
+ansible-playbook provisioning.yml
+```
+
+Run it a **second time** without making any changes:
+
+```bash
+ansible-playbook provisioning.yml
+```
+
+### ✅ Verification — Template Module
+
+```bash
+# Confirm the NTP config on CentOS has our variable values
+ansible db01 -m shell -a "grep pool /etc/chrony.conf"
+
+# Confirm the NTP config on Ubuntu has our variable values
+ansible web03 -m shell -a "grep server /etc/ntp.conf"
+
+# Check NTP service status
+ansible db01 -m shell -a "systemctl status chronyd --no-pager"
+ansible web03 -m shell -a "systemctl status ntp --no-pager"
+```
+
+Expected output on db01:
+```
+pool 0.north-america.pool.ntp.org iburst
+pool 1.north-america.pool.ntp.org iburst
+pool 2.north-america.pool.ntp.org iburst
+pool 3.north-america.pool.ntp.org iburst
+```
+
+**Observe the problem:** Even on the second run (where nothing changed), the restart tasks show `changed: true`. This means the NTP service was bounced unnecessarily. In production this disrupts time synchronisation and can cause cascading issues. **This is what Part 4 fixes.**
+
+---
+
+## Part 4 — Handlers: Restart Only When Needed
+
+### The Concept
+
+**Handlers** are tasks that only run when notified. They sit in a dormant state until another task explicitly says "hey, something changed — you should act now."
+
+Think of them like an on-call engineer: they don't actively do anything until their pager goes off.
+
+The magic field that connects a task to a handler is `notify:`. When a task's result is `changed: true`, it sends a notification to every handler listed under `notify:`. If the task result is `changed: false` (nothing actually changed on disk), no notification is sent and the handler never runs.
+
+### Step 1: Rewrite the Playbook with Handlers
+
+Update `provisioning.yml`:
+
+```yaml
+---
+# provisioning.yml
+# Using handlers so services only restart when config actually changes.
+
+- name: Post-Install Configuration
+  hosts: all
+  become: true
+
+  handlers:
+    # Handlers run ONLY when notified by a task that returned "changed: true"
+    # They run ONCE at the end of the play, even if notified multiple times.
+
+    - name: Restart chronyd on CentOS
+      ansible.builtin.service:
+        name: chronyd
+        state: restarted
+      when: ansible_distribution == "CentOS"
+
+    - name: Restart ntp on Ubuntu
+      ansible.builtin.service:
+        name: ntp
+        state: restarted
+      when: ansible_distribution == "Ubuntu"
+
+  tasks:
+
+    # ─── Task 1: Deploy Login Banner ──────────────────────────────────────────
+    - name: Banner file
+      ansible.builtin.copy:
+        content: "{{ banner_message }}"
+        dest: /etc/motd
+        owner: root
+        group: root
+        mode: '0644'
+
+    # ─── Task 2: Create a managed directory ───────────────────────────────────
+    - name: Create managed directory
+      ansible.builtin.file:
+        path: /opt/ansible-managed
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # ─── Task 3: Deploy NTP config on CentOS ──────────────────────────────────
+    # notify: sends a signal to the handler IF this task makes a change
+    - name: Deploy ntp agent conf on centos
+      ansible.builtin.template:
+        src: ntpconf_centos.j2
+        dest: /etc/chrony.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      when: ansible_distribution == "CentOS"
+      notify:
+        - Restart chronyd on CentOS
+
+    # ─── Task 4: Deploy NTP config on Ubuntu ──────────────────────────────────
+    - name: Deploy ntp agent conf on ubuntu
+      ansible.builtin.template:
+        src: ntpconf_ubuntu.j2
+        dest: /etc/ntp.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      when: ansible_distribution == "Ubuntu"
+      notify:
+        - Restart ntp on Ubuntu
+
+    # ─── Task 5: Ensure NTP service started (CentOS) ──────────────────────────
+    - name: Start and enable chronyd on CentOS
+      ansible.builtin.service:
+        name: chronyd
+        state: started
+        enabled: yes
+      when: ansible_distribution == "CentOS"
+
+    # ─── Task 6: Ensure NTP service started (Ubuntu) ──────────────────────────
+    - name: Start and enable ntp on Ubuntu
+      ansible.builtin.service:
+        name: ntp
+        state: started
+        enabled: yes
+      when: ansible_distribution == "Ubuntu"
+```
+
+**Key points about the handler block:**
+
+- `handlers:` must be at the **same indentation level** as `tasks:` — they are siblings, not nested inside tasks.
+- The handler `name:` must **exactly match** the string in `notify:` — including capitalisation and spaces.
+- Handlers run **after all tasks finish**, not immediately when notified.
+- If the same handler is notified 10 times in one play, it still only runs **once**.
+
+### Step 2: Run Without Changes (First Run)
+
+```bash
+ansible-playbook provisioning.yml
+```
+
+Since the config files already exist with the correct content, the template tasks will report `ok` (not `changed`) and the handlers will **not** be triggered.
+
+### Step 3: Simulate a Config Change
+
+Edit `templates/ntpconf_centos.j2` and add a comment line at the top:
+
+```bash
+sed -i '1s/^/# Updated: 2024-01-01\n/' templates/ntpconf_centos.j2
+```
+
+Now run the playbook:
+
+```bash
+ansible-playbook provisioning.yml
+```
+
+### ✅ Verification — Handlers
+
+```bash
+# Run playbook with no changes — handlers should NOT fire
+ansible-playbook provisioning.yml
+
+# Look for this in the output — "RUNNING HANDLERS" section should be empty or absent:
+# PLAY RECAP
+# db01    : ok=5    changed=0    unreachable=0    failed=0
+```
+
+Now make a change to the CentOS template only:
+
+```bash
+echo "# test change $(date)" >> templates/ntpconf_centos.j2
+ansible-playbook provisioning.yml
+```
+
+Expected output (handlers section should appear):
+```
+RUNNING HANDLERS ***************
+TASK [Restart chronyd on CentOS] ***************
+changed: [db01]
+```
+
+And crucially — `web03` (Ubuntu) handler should **not** run, because we only changed the CentOS template.
+
+```bash
+# Confirm chronyd was restarted by checking its start time
+ansible db01 -m shell -a "systemctl show chronyd --property=ActiveEnterTimestamp"
+
+# Confirm ntp on Ubuntu was NOT restarted (timestamp should be older)
+ansible web03 -m shell -a "systemctl show ntp --property=ActiveEnterTimestamp"
+```
+
+---
+
+## Part 5 — Ansible Roles: Organising Everything
+
+### Why Roles?
+
+As your playbook grows, it becomes harder to navigate. Roles solve this by enforcing a **standard directory structure** where each type of content lives in its own folder. This gives you:
+
+- **Clarity** — tasks in `tasks/`, templates in `templates/`, variables in `vars/`
+- **Modularity** — roles can be tested independently
+- **Reusability** — a role written once can be applied to dozens of projects
+- **Collaboration** — other engineers know exactly where to look
+
+**When NOT to use roles:** For very small, one-off playbooks (less than ~20 tasks) that will never be reused, a flat playbook is perfectly fine.
+
+### Step 1: Create the Role Skeleton
+
+```bash
+cd ~/ansible-lab
+mkdir -p roles
+cd roles
+ansible-galaxy init post-install
+cd ~/ansible-lab
+```
+
+This creates the full role structure. Verify with:
+
+```bash
+tree roles/
+```
+
+Expected output:
+```
+roles/
+└── post-install/
+    ├── defaults/
+    │   └── main.yml
+    ├── files/
+    ├── handlers/
+    │   └── main.yml
+    ├── meta/
+    │   └── main.yml
+    ├── tasks/
+    │   └── main.yml
+    ├── templates/
+    ├── tests/
+    │   ├── inventory
+    │   └── test.yml
+    └── vars/
+        └── main.yml
+```
+
+### Step 2: Move Variables into the Role
+
+Move variables from `group_vars/all.yml` into the role's `defaults/main.yml`. We use `defaults/` (not `vars/`) because default values are intended to be **overridable** — any variable defined elsewhere takes precedence.
+
+```yaml
+# roles/post-install/defaults/main.yml
+# Default variable values — override these in group_vars, host_vars, or the playbook.
+
+banner_message: |
+  ############################################
+  #   This server is managed by Ansible.     #
+  #   No manual changes please.              #
+  ############################################
+
+# NTP Servers — default to North America pool
+ntp0: "0.north-america.pool.ntp.org"
+ntp1: "1.north-america.pool.ntp.org"
+ntp2: "2.north-america.pool.ntp.org"
+ntp3: "3.north-america.pool.ntp.org"
+
+# Directory to create on all servers
+managed_dir: "/opt/ansible-managed"
+```
+
+**Priority order (lowest to highest):**
+```
+role defaults  <  group_vars  <  host_vars  <  playbook vars  <  extra-vars (-e flag)
+```
+
+### Step 3: Move Templates into the Role
+
+```bash
+cp templates/ntpconf_centos.j2 roles/post-install/templates/
+cp templates/ntpconf_ubuntu.j2 roles/post-install/templates/
+```
+
+When using a role, the `template` module automatically looks for templates in `roles/<role_name>/templates/` — you do **not** need to include the `templates/` prefix in your `src:` path.
+
+### Step 4: Move Files into the Role
+
+```bash
+# Create a sample file to push via copy module
+echo "Deployed by Ansible post-install role" > roles/post-install/files/myfile.txt
+```
+
+### Step 5: Write the Role's Handlers
+
+Edit `roles/post-install/handlers/main.yml`:
+
+```yaml
+---
+# roles/post-install/handlers/main.yml
+# Handlers are triggered by notify: in tasks. They run once, at end of play.
+
+- name: Restart chronyd on CentOS
+  ansible.builtin.service:
+    name: chronyd
+    state: restarted
+  when: ansible_distribution == "CentOS"
+
+- name: Restart ntp on Ubuntu
+  ansible.builtin.service:
+    name: ntp
+    state: restarted
+  when: ansible_distribution == "Ubuntu"
+```
+
+### Step 6: Write the Role's Tasks
+
+Edit `roles/post-install/tasks/main.yml`:
+
+```yaml
+---
+# roles/post-install/tasks/main.yml
+# Main task file for the post-install role.
+# When this role is called, Ansible runs this file automatically.
+
+# ─── Banner ──────────────────────────────────────────────────────────────────
+- name: Banner file
+  ansible.builtin.copy:
+    content: "{{ banner_message }}"
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: '0644'
+
+# ─── Managed Directory ───────────────────────────────────────────────────────
+- name: Create managed directory
+  ansible.builtin.file:
+    path: "{{ managed_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+# ─── Drop a sample managed file ──────────────────────────────────────────────
+# The copy module automatically looks in roles/post-install/files/
+- name: Dump managed file
+  ansible.builtin.copy:
+    src: myfile.txt
+    dest: /tmp/myfile.txt
+    owner: root
+    group: root
+    mode: '0644'
+
+# ─── NTP Configuration: CentOS ───────────────────────────────────────────────
+# The template module automatically looks in roles/post-install/templates/
+- name: Deploy ntp agent conf on centos
+  ansible.builtin.template:
+    src: ntpconf_centos.j2
+    dest: /etc/chrony.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  when: ansible_distribution == "CentOS"
+  notify:
+    - Restart chronyd on CentOS
+
+# ─── NTP Configuration: Ubuntu ───────────────────────────────────────────────
+- name: Deploy ntp agent conf on ubuntu
+  ansible.builtin.template:
+    src: ntpconf_ubuntu.j2
+    dest: /etc/ntp.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  when: ansible_distribution == "Ubuntu"
+  notify:
+    - Restart ntp on Ubuntu
+
+# ─── Ensure Services Are Running ─────────────────────────────────────────────
+- name: Start and enable chronyd on CentOS
+  ansible.builtin.service:
+    name: chronyd
+    state: started
+    enabled: yes
+  when: ansible_distribution == "CentOS"
+
+- name: Start and enable ntp on Ubuntu
+  ansible.builtin.service:
+    name: ntp
+    state: started
+    enabled: yes
+  when: ansible_distribution == "Ubuntu"
+```
+
+### Step 7: Simplify the Main Playbook
+
+Replace the entire content of `provisioning.yml` with:
+
+```yaml
+---
+# provisioning.yml
+# This playbook is now beautifully simple.
+# All logic lives inside the role.
+
+- name: Post-Install Configuration
+  hosts: all
+  become: true
+
+  roles:
+    - post-install
+```
+
+### ✅ Verification — Roles
+
+```bash
+# Dry run to see what would happen without making changes
+ansible-playbook provisioning.yml --check
+
+# Actually run it
+ansible-playbook provisioning.yml
+```
+
+Expected output format (note the role name prefix on each task):
+```
+TASK [post-install : Banner file] ********************
+ok: [db01]
+ok: [web03]
+
+TASK [post-install : Create managed directory] *******
+ok: [db01]
+ok: [web03]
+
+TASK [post-install : Deploy ntp agent conf on centos] *
+ok: [db01]
+
+TASK [post-install : Deploy ntp agent conf on ubuntu] *
+ok: [web03]
+```
+
+Verify the role structure on disk:
+
+```bash
+tree roles/post-install/
+ansible db01 -m shell -a "cat /tmp/myfile.txt"
+ansible db01 -m shell -a "ls -la /opt/ansible-managed"
+```
+
+---
+
+## Part 6 — Variable Overriding with Roles
+
+### The Use Case
+
+Your `post-install` role is used by three teams in your organisation:
+
+- **North America team** — uses `*.north-america.pool.ntp.org`
+- **Europe team** — uses `*.europe.pool.ntp.org`
+- **Asia-Pacific team** — uses `*.asia.pool.ntp.org`
+
+Instead of maintaining three separate roles, you maintain **one role** and each team's playbook overrides the NTP variables.
+
+### Method 1: Override in the Playbook (per-role vars)
+
+```yaml
+---
+# playbook-eu.yml — Example for a European data centre
+
+- name: Post-Install Configuration (EU)
+  hosts: all
+  become: true
+
+  roles:
+    - role: post-install
+      vars:
+        ntp0: "0.europe.pool.ntp.org"
+        ntp1: "1.europe.pool.ntp.org"
+        ntp2: "2.europe.pool.ntp.org"
+        ntp3: "3.europe.pool.ntp.org"
+        banner_message: |
+          ############################################
+          #   EU Data Centre — Managed by Ansible   #
+          #   No manual changes please.              #
+          ############################################
+```
+
+### Method 2: Override via host_vars (per-server)
+
+```bash
+mkdir -p host_vars
+```
+
+Create `host_vars/db01.yml`:
+
+```yaml
+# host_vars/db01.yml
+# Variables here ONLY apply to the db01 host.
+# They override group_vars and role defaults.
+
+managed_dir: "/opt/db-ansible-managed"  # different path for database servers
+```
+
+Create `host_vars/web03.yml`:
+
+```yaml
+# host_vars/web03.yml
+# Variables here ONLY apply to the web03 host.
+
+managed_dir: "/opt/web-ansible-managed"  # different path for web servers
+```
+
+### ✅ Verification — Variable Override
+
+```bash
+# Run with explicit extra-vars to override NTP servers
+ansible-playbook provisioning.yml -e "ntp0=time.cloudflare.com"
+
+# Verify the config file picked up the override
+ansible db01 -m shell -a "grep pool /etc/chrony.conf | head -1"
+```
+
+Expected output:
+```
+pool time.cloudflare.com iburst
+```
+
+```bash
+# Verify host_vars applied correctly
+ansible db01 -m shell -a "ls /opt/db-ansible-managed"
+ansible web03 -m shell -a "ls /opt/web-ansible-managed"
+```
+
+### Understanding Variable Priority
+
+Run this to see what value a variable has for each host:
+
+```bash
+ansible db01 -m debug -a "var=ntp0"
+ansible web03 -m debug -a "var=managed_dir"
+```
+
+---
+
+## Part 7 — Ansible Galaxy: Using Community Roles
+
+Ansible Galaxy (https://galaxy.ansible.com) is a repository of pre-built roles contributed by the community. Instead of writing a role from scratch for common software, you can download and use an existing one.
+
+### When to Use Galaxy Roles
+
+**Good reasons:**
+- Bootstrapping quickly for standard software (Java, MySQL, Nginx, etc.)
+- Learning from how experts structure complex roles
+- Prototyping before writing your own
+
+**Reasons to write your own:**
+- Your configuration is non-standard
+- You need to maintain and audit every line (security compliance)
+- The Galaxy role has more features than you need (complexity for no gain)
+
+### Install a Community Role
+
+```bash
+# Install the popular geerlingguy.java role
+ansible-galaxy install geerlingguy.java
+
+# See where it was installed
+ansible-galaxy list
+```
+
+It installs to `~/.ansible/roles/` by default.
+
+```bash
+# Inspect its structure
+tree ~/.ansible/roles/geerlingguy.java/
+```
+
+### Use a Galaxy Role Alongside Your Own Role
+
+Create `playbook-with-java.yml`:
+
+```yaml
+---
+# playbook-with-java.yml
+# Installs Java (via Galaxy role) then applies our post-install configuration.
+
+- name: Application Server Setup
+  hosts: all
+  become: true
+
+  roles:
+    # Galaxy role runs first — installs the right Java for the OS
+    - role: geerlingguy.java
+      vars:
+        java_packages:
+          - java-11-openjdk  # For CentOS
+    # Our role runs second
+    - role: post-install
+```
+
+### ✅ Verification — Galaxy Role
+
+```bash
+# Check if the Galaxy role is available
+ansible-galaxy list | grep geerlingguy.java
+
+# Check what variables the role exposes
+cat ~/.ansible/roles/geerlingguy.java/defaults/main.yml
+```
+
+---
+
+## Final Project Verification
+
+Run this comprehensive check to validate everything is working:
+
+```bash
+# 1. Full playbook run — should show mostly "ok" (no changes since previous run)
+ansible-playbook provisioning.yml -v
+
+# 2. Check banner on all hosts
+ansible all -m shell -a "cat /etc/motd"
+
+# 3. Check NTP config variables were applied
+ansible db01 -m shell -a "grep 'north-america' /etc/chrony.conf | wc -l"
+# Expected: 4
+
+ansible web03 -m shell -a "grep 'north-america' /etc/ntp.conf | wc -l"
+# Expected: 4
+
+# 4. Check services are running and enabled
+ansible db01 -m shell -a "systemctl is-active chronyd && systemctl is-enabled chronyd"
+# Expected: active / enabled
+
+ansible web03 -m shell -a "systemctl is-active ntp && systemctl is-enabled ntp"
+# Expected: active / enabled
+
+# 5. Check managed directory exists on all hosts
+ansible all -m shell -a "ls -la /opt/ansible-managed"
+
+# 6. Check managed file was deployed
+ansible all -m shell -a "cat /tmp/myfile.txt"
+
+# 7. Test handler only fires on change
+# Make a change to CentOS template only
+echo "# verification test $(date)" >> roles/post-install/templates/ntpconf_centos.j2
+
+ansible-playbook provisioning.yml -v 2>&1 | grep -E "(RUNNING HANDLERS|Restart|changed|ok)"
+# Expected: handler fires for db01 but NOT for web03
+
+# 8. Revert the test change
+# Remove the last line we added
+head -n -1 roles/post-install/templates/ntpconf_centos.j2 > /tmp/tmp_template
+mv /tmp/tmp_template roles/post-install/templates/ntpconf_centos.j2
+
+# 9. Confirm idempotency — second run should have 0 changes
+ansible-playbook provisioning.yml
+# Expected PLAY RECAP: changed=0 for all hosts
+```
+
+### Full Health Check Script
+
+Save this as `verify.sh` and run it at any time:
+
+```bash
+#!/bin/bash
+# verify.sh — Run this after any playbook change to confirm everything is healthy
+
+set -e
+
+PASS=0
+FAIL=0
+
+check() {
+  local desc="$1"
+  local host="$2"
+  local cmd="$3"
+  local expected="$4"
+
+  result=$(ansible "$host" -m shell -a "$cmd" 2>/dev/null | grep -v "^$host" | tr -d ' \n')
+
+  if echo "$result" | grep -q "$expected"; then
+    echo "  ✅ PASS: $desc"
+    ((PASS++))
+  else
+    echo "  ❌ FAIL: $desc (got: $result, expected: $expected)"
+    ((FAIL++))
+  fi
+}
+
+echo ""
+echo "═══════════════════════════════════════"
+echo "   Ansible Lab Health Check"
+echo "═══════════════════════════════════════"
+
+echo ""
+echo "── Banner ──────────────────────────────"
+check "Banner on db01" "db01" "grep -c 'Ansible' /etc/motd" "1"
+check "Banner on web03" "web03" "grep -c 'Ansible' /etc/motd" "1"
+
+echo ""
+echo "── NTP Config ──────────────────────────"
+check "NTP servers in chrony.conf" "db01" "grep -c 'north-america' /etc/chrony.conf" "4"
+check "NTP servers in ntp.conf" "web03" "grep -c 'north-america' /etc/ntp.conf" "4"
+
+echo ""
+echo "── Services ────────────────────────────"
+check "chronyd active on db01" "db01" "systemctl is-active chronyd" "active"
+check "chronyd enabled on db01" "db01" "systemctl is-enabled chronyd" "enabled"
+check "ntp active on web03" "web03" "systemctl is-active ntp" "active"
+check "ntp enabled on web03" "web03" "systemctl is-enabled ntp" "enabled"
+
+echo ""
+echo "── Files & Dirs ────────────────────────"
+check "Managed dir on db01" "db01" "test -d /opt/ansible-managed && echo yes" "yes"
+check "Managed dir on web03" "web03" "test -d /opt/ansible-managed && echo yes" "yes"
+check "Managed file on db01" "db01" "test -f /tmp/myfile.txt && echo yes" "yes"
+
+echo ""
+echo "═══════════════════════════════════════"
+echo "   Results: ✅ $PASS passed  ❌ $FAIL failed"
+echo "═══════════════════════════════════════"
+echo ""
+```
+
+```bash
+chmod +x verify.sh
+./verify.sh
+```
+
+---
+
+## Real-World Use Cases
+
+### Use Case 1: Multi-Region NTP with One Role
+
+```
+Region        | NTP Variable     | Value
+------------- | ---------------- | ---------------------------
+North America | ntp0             | 0.north-america.pool.ntp.org
+Europe        | ntp0             | 0.europe.pool.ntp.org
+Asia-Pacific  | ntp0             | 0.asia.pool.ntp.org
+```
+
+One role, three variable files, zero duplicated logic.
+
+### Use Case 2: Environment-Specific Banners
+
+```yaml
+# group_vars/production.yml
+banner_message: |
+  ⚠️  PRODUCTION SERVER — Managed by Ansible  ⚠️
+  ALL changes must go through change management.
+
+# group_vars/staging.yml
+banner_message: |
+  ℹ️  STAGING SERVER — Managed by Ansible
+  Safe to experiment. Not customer-facing.
+```
+
+### Use Case 3: Handler Chain — Config Change Triggers Validation Then Restart
+
+```yaml
+handlers:
+  - name: Validate chrony config
+    ansible.builtin.command: chronyd -p -f /etc/chrony.conf
+    listen: "chrony config changed"
+
+  - name: Restart chronyd
+    ansible.builtin.service:
+      name: chronyd
+      state: restarted
+    listen: "chrony config changed"
+```
+
+Both handlers share the same `listen:` label. When notified, Ansible runs them in order — validate first, restart only if validation passes.
+
+### Use Case 4: File Handler — Reload vs Restart
+
+For services like Nginx, you typically want `reload` (graceful, no dropped connections) not `restart` (brief downtime). Handlers make this easy:
+
+```yaml
+handlers:
+  - name: Reload nginx
+    ansible.builtin.service:
+      name: nginx
+      state: reloaded
+```
+
+---
+
+## Troubleshooting Reference
+
+### Problem: `UNREACHABLE! => Failed to connect to the host via ssh`
+
+```bash
+# Test SSH manually
+ssh -i ~/.ssh/ansible_key vagrant@192.168.56.11 -v
+
+# Re-copy the key
+ssh-copy-id -i ~/.ssh/ansible_key.pub vagrant@192.168.56.11
+```
+
+### Problem: `MODULE FAILURE — No Python interpreter found`
+
+```bash
+# In ansible.cfg or inventory, explicitly set:
+ansible_python_interpreter=/usr/bin/python3
+
+# Or detect automatically:
+ansible_python_interpreter=auto
+```
+
+### Problem: Handler not firing when expected
+
+1. Check the handler `name:` exactly matches the string in `notify:` (case-sensitive)
+2. Check the task actually returned `changed: true` (run with `-v`)
+3. Check there is no `when:` condition on the task blocking it
+
+```bash
+ansible-playbook provisioning.yml -v 2>&1 | grep -E "(changed|notify|HANDLER)"
+```
+
+### Problem: Template variable undefined
+
+```bash
+# See all variables available to a host
+ansible db01 -m debug -a "var=hostvars[inventory_hostname]"
+
+# Check a specific variable
+ansible db01 -m debug -a "var=ntp0"
+```
+
+### Problem: `changed=1` on every run even with no edits
+
+The file on the remote server differs from your template output. Compare them:
+
+```bash
+# Show diff without making changes
+ansible-playbook provisioning.yml --check --diff
+```
+
+This prints a unified diff of what would change, so you can see exactly what is different.
+
+### Problem: Vagrant VM won't start
+
+```bash
+# Check VirtualBox is running
+vboxmanage list runningvms
+
+# Destroy and re-create a specific VM
+vagrant destroy db01 -f
+vagrant up db01
+
+# Check VM logs
+vagrant up db01 --debug 2>&1 | tail -50
+```
+
+---
+
+## Summary: What You Learned
+
+| Concept | Module/Feature | When to Use |
+|---------|---------------|-------------|
+| Push static content | `copy` with `content:` | Short, known strings like banners |
+| Push static files | `copy` with `src:` | Binary files or files from your repo |
+| Push dynamic config | `template` with Jinja2 | Any config with environment-specific values |
+| Conditional tasks | `when:` | OS-specific tasks, environment checks |
+| Triggered restarts | `handlers` + `notify:` | Any service restart or reload |
+| Code organisation | `roles` | Any playbook >20 tasks or meant for reuse |
+| Default values | `defaults/main.yml` | Values that should be overridable |
+| Fixed values | `vars/main.yml` | Values that should NOT be easily overridden |
+| Community code | `ansible-galaxy install` | Standard software on well-known OS versions |
+
+---
+
+*Happy automating! The best Ansible playbook is the one that does exactly what it needs to, no more — and whose intent is obvious to the next engineer who reads it.*
