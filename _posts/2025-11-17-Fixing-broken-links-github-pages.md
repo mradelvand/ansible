@@ -3,6 +3,7 @@ title: "LAB01: From Zero to Production-Ready Automation with Vagrant"
 date: 2026-04-27
 categories: [ansible, DevOps & Automation, vagrant]
 tags: [ansible, vagrant, Handlers, Ansible Roles]
+
 ---
 # Complete Ansible Project: From Zero to Production-Ready Automation with Vagrant
 
