@@ -5,6 +5,7 @@ categories: [ansible, DevOps & Automation, AWS]
 tags: [ansible, AWS IAM, Ansible Vault, bashrc]
 
 ---
+
 # .bashrc or Ansible Vault
 
 🔹 What is .bashrc (very simple)
