@@ -6,8 +6,8 @@ Welcome to my personal documentation space
 
 ##  Explore by Category
 
-- [Lab01](archive.html#Lab01)
-
+- [Lab01 Ansible and Vagrant](archive.html#Lab01)
+- [Lab02 Ansible and AWS](archive.html#Lab02)
 
 > [📁 Blog Archive](archive.html).
 
